@@ -15,6 +15,9 @@ namespace log_test
     {
     public:
         SimpleString() = default;
+        SimpleString(const SimpleString&);
+        SimpleString& operator=(const SimpleString&);
+        SimpleString& operator=(const char*);
         ~SimpleString();
         bool PushBack(char ch);
         size_t Size() const;
@@ -23,10 +26,11 @@ namespace log_test
         void Reset();
         void Invalidate();
     private:
-        void ReallocBuffer();
+        void Set(const char* src, size_t size);
+        void ReallocBuffer(size_t new_alloc_size);
         size_t alloc_size{};
         size_t size{};
         char* m_data{};
-        static constexpr unsigned long long default_buffer_size = 256;
+        static constexpr size_t default_buffer_size = 256;
     };
 }

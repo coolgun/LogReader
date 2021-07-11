@@ -1,5 +1,6 @@
 #include "LogReader.h"
 #include "SimpleRegexp.h"
+#include <process.h>
 
 namespace log_test
 {
@@ -239,7 +240,7 @@ namespace log_test
         }
     }
 
-    void CLogReader::Enumerate(fun f)
+   void CLogReader::Enumerate(Fun f)
     {
         if (!text_file->IsOpen()) return;
         if (!reg_exp->IsOk()) return;
@@ -253,5 +254,145 @@ namespace log_test
                 f(line, strlen(line));
             }
         }
+    }
+}
+
+
+namespace log_test
+{
+    class AsyncEnumerateHelper
+    {
+    public:
+        AsyncEnumerateHelper(CLogReader *p_log_reader, Fun f)
+            : log_reader(p_log_reader)
+            , fun(f)
+            , stop(false)
+        {
+            
+        }
+        void process()
+        {
+         
+            InitializeConditionVariable(&buffer_not_empty);
+            InitializeConditionVariable(&buffer_not_full);
+
+            InitializeCriticalSection(&buffer_lock);
+
+            HANDLE hReadLine = reinterpret_cast<HANDLE>(_beginthreadex(0, 0, ReadLineThreadProc, this, 0, 0));
+            HANDLE hMatch = reinterpret_cast<HANDLE>(_beginthreadex(0, 0, MatchThreadProc, this, 0, 0));
+
+            WaitForSingleObject(hReadLine, INFINITE);
+
+            EnterCriticalSection(&buffer_lock);
+            stop = true;
+            LeaveCriticalSection(&buffer_lock);
+            WaitForSingleObject(hMatch, INFINITE);
+        }
+    private:
+        unsigned ReadLines()
+        {
+            if (!log_reader->text_file->IsOpen()) return 0;
+            if (!log_reader->reg_exp->IsOk()) return 0;
+
+            for (;;)
+            {
+                const auto* line = log_reader->text_file->ReadLine();
+                if (!line || !log_reader->text_file->IsOpen()) return 0;
+
+                EnterCriticalSection(&buffer_lock);
+
+                while (queue_size == BUFFER_SIZE && !stop)
+                {
+                    SleepConditionVariableCS(&buffer_not_full, &buffer_lock, INFINITE);
+                }
+
+                if (stop)
+                {
+                    LeaveCriticalSection(&buffer_lock);
+                    break;
+                }
+
+                circular_buffer[(queue_start_offset + queue_size) % BUFFER_SIZE] = line;
+                ++queue_size;
+                LeaveCriticalSection(&buffer_lock);
+                WakeConditionVariable(&buffer_not_empty);
+            }
+            return 0;
+        }
+
+        static unsigned WINAPI ReadLineThreadProc(void* data)
+        {
+             auto* this_ = reinterpret_cast<AsyncEnumerateHelper*>(data);
+             return this_->ReadLines();
+        }
+
+        unsigned MatchLines()
+        {
+            SimpleString current_line;
+            while (true)
+            {
+                EnterCriticalSection(&buffer_lock);
+
+                while (queue_size == 0 && !stop)
+                {
+                    SleepConditionVariableCS(&buffer_not_empty, &buffer_lock, INFINITE);
+                }
+
+                if (stop && queue_size == 0)
+                {
+                    LeaveCriticalSection(&buffer_lock);
+                    break;
+                }
+
+                current_line = circular_buffer[queue_start_offset];
+
+                --queue_size;
+                ++queue_start_offset;
+
+                if (queue_start_offset == BUFFER_SIZE)
+                {
+                    queue_start_offset = 0;
+                }
+
+                LeaveCriticalSection(&buffer_lock);
+
+                WakeConditionVariable(&buffer_not_full);
+                const auto* line = current_line.Data();
+                if (log_reader->reg_exp->Match(line))
+                {
+                    fun(line, strlen(line));
+                }
+            }
+
+            return 0;
+        };
+
+        static unsigned WINAPI MatchThreadProc(void* data)
+        {
+            auto* this_ = reinterpret_cast<AsyncEnumerateHelper*>(data);
+            return this_->MatchLines();
+        }
+
+        
+    private:   
+        CLogReader* log_reader;
+        Fun fun;
+        static constexpr size_t BUFFER_SIZE = 100;
+        
+        SimpleString circular_buffer[BUFFER_SIZE];
+
+        size_t queue_size{};
+        size_t queue_start_offset{};
+
+        CONDITION_VARIABLE buffer_not_empty;
+        CONDITION_VARIABLE buffer_not_full;
+        CRITICAL_SECTION   buffer_lock;
+        bool stop;
+    };
+
+    void CLogReader::AsyncEnumerate(Fun f)
+    {
+        AsyncEnumerateHelper helper(this, f);
+        helper.process();
     }
 }

@@ -20,6 +20,22 @@ namespace log_test
         OutputDebugStringA("\n");
     }
 
+    SimpleString::SimpleString(const SimpleString& src)
+    {
+        Set(src.m_data, src.size);
+    }
+
+    SimpleString& SimpleString::operator = (const SimpleString& src)
+    {
+        Set(src.m_data, src.size);
+        return *this;
+    }
+
+    SimpleString& SimpleString::operator=(const char* src)
+    {
+        Set(src, strlen(src));
+        return *this;
+    }
 
     SimpleString::~SimpleString()
     {
@@ -48,7 +64,7 @@ namespace log_test
     {
         if (size == alloc_size)
         {
-            ReallocBuffer();
+            ReallocBuffer(alloc_size ? 2* alloc_size : default_buffer_size);
             if (!m_data)
                 return false;
         }
@@ -67,15 +83,31 @@ namespace log_test
             ZeroMemory(m_data, alloc_size);
         size = 0;
     }
-    
-    void SimpleString::ReallocBuffer()
+   
+    void SimpleString::Set(const char* src, size_t new_size)
+    {
+        if (!src)
+        {
+            Reset();
+            return;
+        }
+        if (alloc_size < (new_size+1))
+        {
+            ReallocBuffer(new_size+1);
+        }
+        size = new_size;
+        CopyMemory(m_data, src, new_size);
+        m_data[new_size] = 0;
+    }
+
+    void SimpleString::ReallocBuffer(size_t new_alloc_size)
     {
         m_data = static_cast<char*>(
             !alloc_size
-            ? HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, alloc_size = default_buffer_size)
-            : HeapReAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, m_data, alloc_size = 2 * alloc_size)
+            ? HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, new_alloc_size)
+            : HeapReAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, m_data, new_alloc_size)
             );
-
+        alloc_size = new_alloc_size;
     }
     
 }

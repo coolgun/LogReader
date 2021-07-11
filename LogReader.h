@@ -4,7 +4,7 @@
 
 namespace log_test
 {
-    using fun = void(*)(const char* buf, size_t bufsize);
+    using Fun = void(*)(const char* buf, size_t bufsize);
     class CLogReader final
     {
         class CTextFile* text_file{};
@@ -32,7 +32,11 @@ namespace log_test
         bool GetNextLine(char* buf, const int bufsize);
 
         // Injecting a functor which is called each time a line is found which matches the pattern
-        void Enumerate(fun f);
-
+        void Enumerate(Fun f);
+        // Injecting a functor which is called each time a line is found which matches the pattern(Async);
+        void AsyncEnumerate(Fun f);
+    private:
+        //Our asynchronous friend
+        friend class AsyncEnumerateHelper;
     };
 }

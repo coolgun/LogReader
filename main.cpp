@@ -13,16 +13,23 @@ int main(int argc, char* argv[])
 
     log_test::CLogReader reader;
     if (!reader.SetFilter(argv[2])) return -1;
-    char buf[256] = {};
     if (!reader.Open(argv[1])) return -1;
-    
-#if 1 
-    while (reader.GetNextLine(buf, 256))
+
+#if 0
+    static constexpr size_t buffer_size = 256;
+    char buf[buffer_size] = {};
+    while (reader.GetNextLine(buf, buffer_size))
     {
         printf("%s\n", buf);
     }
-#else
-    reader.Enumerate([](const char* buf, size_t bufsize)
+#elif 0  
+    reader.Enumerate([](const char* buf, size_t)
+        {
+            printf("%s\n", buf);
+        }
+    );
+#else  
+    reader.AsyncEnumerate([](const char* buf, size_t)
         {
             printf("%s\n", buf);
         }
